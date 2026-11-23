@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AutentiCar – Assistente de Vistoria</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--tx:#14202b;--mut:#5d6b78;--pri:#0b6e4f;--prit:#fff;--bd:#d9e0e6;--ok:#0b6e4f;--warn:#b26a00;--bad:#b3261e;--me:#dff3ea;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10171d;--card:#18222a;--tx:#e8eef2;--mut:#9aa9b6;--pri:#3fbf8f;--prit:#06231a;--bd:#2a3944;--ok:#3fbf8f;--warn:#e0a040;--bad:#ff8a80;--me:#1d3a31}}
+:root[data-theme="dark"]{--bg:#10171d;--card:#18222a;--tx:#e8eef2;--mut:#9aa9b6;--pri:#3fbf8f;--prit:#06231a;--bd:#2a3944;--ok:#3fbf8f;--warn:#e0a040;--bad:#ff8a80;--me:#1d3a31}
+*{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+header{padding:12px 16px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px}
+header b{font-size:17px}header small{color:var(--mut);display:block;font-size:12px}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--pri);color:var(--prit);display:grid;place-items:center;font-weight:700}
+#prog{display:flex;gap:6px;padding:8px 16px;overflow-x:auto;background:var(--card);border-bottom:1px solid var(--bd)}
+.pill{white-space:nowrap;font-size:12px;padding:3px 9px;border-radius:99px;border:1px solid var(--bd);color:var(--mut)}
+.pill.ok{background:var(--ok);color:var(--prit);border-color:var(--ok)}
+.pill.bad{border-color:var(--bad);color:var(--bad)}
+#chat{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:10px}
+.m{max-width:88%;padding:10px 12px;border-radius:14px;background:var(--card);border:1px solid var(--bd);white-space:pre-wrap;word-wrap:break-word}
+.m.me{align-self:flex-end;background:var(--me)}
+.m img{max-width:100%;border-radius:8px;display:block;margin-bottom:6px}
+.m .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;margin:2px 4px 2px 0;border:1px solid currentColor}
+.tag.ok{color:var(--ok)}.tag.warn{color:var(--warn)}.tag.bad{color:var(--bad)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 8px}
+.chips button{border:1px solid var(--pri);background:transparent;color:var(--pri);padding:6px 12px;border-radius:99px;font:inherit;font-size:14px}
+#bar{display:flex;gap:8px;padding:10px 12px;background:var(--card);border-top:1px solid var(--bd)}
+#bar input[type=text]{flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font:inherit}
+#bar button{border:0;border-radius:12px;padding:0 14px;background:var(--pri);color:var(--prit);font:inherit;font-weight:600}
+#bar .cam{background:transparent;border:1px solid var(--pri);color:var(--pri)}
+.g{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}.g div{border:1px solid var(--bd);border-radius:10px;padding:6px;font-size:12px;color:var(--mut)}.g svg{width:100%;height:auto;display:block;color:var(--tx);margin-bottom:4px}.g b{display:block;color:var(--tx);font-size:13px}.laudo{border-left:4px solid var(--ok)}.laudo.warn{border-left-color:var(--warn)}.laudo.bad{border-left-color:var(--bad)}
+</style>
+</head>
+<body>
+<header><div class="logo">AC</div><div><b>AutentiCar</b><small>Assistente de vistoria veicular com IA</small></div></header>
+<div id="prog"></div>
+<div id="chat"></div>
+<div class="chips" id="chips"></div>
+<div id="bar">
+  <button class="cam" id="cam" title="Enviar foto">📷</button>
+  <input type="file" id="file" accept="image/*" capture="environment" multiple hidden>
+  <input type="text" id="txt" placeholder="Digite a placa ou uma pergunta…" autocomplete="off">
+  <button id="send">Enviar</button>
+</div>
+<script>
+const VIEWS={frente:"Frente",traseira:"Traseira",lateral_esquerda:"Lateral esq.",lateral_direita:"Lateral dir.",chassi:"Chassi",painel:"Painel/KM"};
+const REQUIRED=["frente","traseira","lateral_esquerda","lateral_direita","chassi"];
+const S={plate:null,results:{},hashes:[],dh:[],log:[],busy:false};
+const chat=document.getElementById("chat"),txt=document.getElementById("txt");
+let sample=null,imgOK=false;
+
+function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function say(text,who,extra){const m=el("div","m"+(who==="me"?" me":""));if(extra&&extra.img){const i=el("img");i.src=extra.img;m.appendChild(i)}if(text)m.appendChild(document.createTextNode(text));if(extra&&extra.tags){const d=el("div");extra.tags.forEach(([k,t])=>d.appendChild(el("span","tag "+k,t)));m.appendChild(d)}if(extra&&extra.cls)m.classList.add(...extra.cls.split(" "));chat.appendChild(m);chat.scrollTop=chat.scrollHeight;return m}
+function chips(list){const c=document.getElementById("chips");c.innerHTML="";list.forEach(([l,f])=>{const b=el("button",null,l);b.onclick=f;c.appendChild(b)})}
+function prog(){const p=document.getElementById("prog");p.innerHTML="";const pl=el("span","pill"+(S.plate?" ok":""),S.plate?"Placa "+S.plate:"Placa pendente");p.appendChild(pl);Object.keys(VIEWS).forEach(k=>{const r=S.results[k];p.appendChild(el("span","pill"+(r?(r.alerts.length?" bad":" ok"):""),VIEWS[k]))})}
+function menu(){chips([["📷 Enviar fotos",()=>document.getElementById("file").click()],["📸 Fotos de modelo",needs],["🧾 Gerar laudo",laudo],["♻️ Nova vistoria",reset]])}
+
+function needs(){const m=say("Para a vistoria preciso de fotos tiradas na hora, bem iluminadas e sem reflexo:\n• Frente do veículo (com a placa visível)\n• Traseira (com a placa visível)\n• Lateral esquerda\n• Lateral direita\n• Chassi, em foto de perto\n• Painel com o KM (opcional)\n\nPode enviar na ordem que preferir; eu identifico cada ângulo. Abaixo estão os modelos de enquadramento (a linha tracejada é a moldura da foto).");guideGrid(m);}
+const SIDE='<path d="M18 68L22 56Q26 50 38 48L52 36Q56 33 62 33H100Q106 33 110 37L122 48Q138 50 142 58L144 68Z"/><path d="M57 39L61 47H103L97 39Z"/><circle cx="44" cy="70" r="10"/><circle cx="118" cy="70" r="10"/>';
+const FR='<rect x="40" y="40" width="80" height="34" rx="8"/><path d="M48 40L56 24H104L112 40"/><rect x="36" y="72" width="10" height="10"/><rect x="114" y="72" width="10" height="10"/>';
+const PL='<rect x="62" y="60" width="36" height="11" rx="2"/><text x="80" y="68.5" font-size="7" text-anchor="middle" fill="currentColor" stroke="none">ABC1D23</text>';
+const GUIDE={
+ frente:["Frente","Afaste-se cerca de 3 m. Enquadre o carro inteiro, com a placa legível.",FR+PL+'<circle cx="52" cy="54" r="5"/><circle cx="108" cy="54" r="5"/>'],
+ traseira:["Traseira","Carro inteiro no quadro, com a placa legível e sem reflexo.",FR+PL+'<rect x="46" y="50" width="12" height="6"/><rect x="102" y="50" width="12" height="6"/>'],
+ lateral_esquerda:["Lateral esquerda","Do para-choque à traseira, das rodas ao teto, sem cortar nenhuma parte.",SIDE],
+ lateral_direita:["Lateral direita","Mesmo enquadramento do outro lado do veículo.",'<g transform="translate(160 0) scale(-1 1)">'+SIDE+'</g>'],
+ chassi:["Chassi","Foto de perto, com boa luz e sem reflexo. Todos os caracteres nítidos.",'<rect x="30" y="34" width="100" height="32" rx="4"/><text x="80" y="54" font-size="8" text-anchor="middle" fill="currentColor" stroke="none">9BWZZZ377VT004251</text>'],
+ painel:["Painel / KM (opcional)","Painel ligado, mostrando o hodômetro, sem reflexo no vidro.",'<circle cx="80" cy="50" r="30"/><path d="M56 62A26 26 0 0 1 104 62"/><rect x="62" y="60" width="36" height="12" rx="2"/><text x="80" y="69" font-size="7" text-anchor="middle" fill="currentColor" stroke="none">KM 45210</text>']
+};
+function guideGrid(m){const g=el("div","g");Object.values(GUIDE).forEach(([t,tip,svg])=>{const d=el("div");d.innerHTML='<svg viewBox="0 0 160 100" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="12" width="148" height="76" rx="6" stroke="var(--pri)" stroke-width="1.5" stroke-dasharray="5 4"/>'+svg+'</svg>';d.appendChild(el("b",null,t));d.appendChild(document.createTextNode(tip));g.appendChild(d)});m.appendChild(g);chat.scrollTop=chat.scrollHeight}
+function reset(){S.plate=null;S.results={};S.hashes=[];S.dh=[];chat.innerHTML="";start()}
+function start(){prog();say("Olá! Sou o assistente de vistoria da AutentiCar. Eu analiso as fotos do seu veículo com IA: confiro placa e chassi, procuro avarias e verifico sinais de fraude. Os casos com alerta são revisados por um analista humano.\n\nPara começar, digite a placa do veículo.");menu()}
+
+/* ---------- análises locais ---------- */
+async function sha256(file){const b=await file.arrayBuffer();const h=await crypto.subtle.digest("SHA-256",b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+function loadImg(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file);const i=new Image();i.onload=()=>res({i,u});i.onerror=rej;i.src=u})}
+function gray(i,w,h){const c=document.createElement("canvas");c.width=w;c.height=h;const x=c.getContext("2d",{willReadFrequently:true});x.drawImage(i,0,0,w,h);const d=x.getImageData(0,0,w,h).data;const g=new Float32Array(w*h);for(let k=0;k<w*h;k++)g[k]=.299*d[k*4]+.587*d[k*4+1]+.114*d[k*4+2];return g}
+function dhash(i){const g=gray(i,9,8);let s="";for(let y=0;y<8;y++)for(let x=0;x<8;x++)s+=g[y*9+x]>g[y*9+x+1]?"1":"0";return s}
+function ham(a,b){let n=0;for(let k=0;k<a.length;k++)if(a[k]!==b[k])n++;return n}
+function quality(i){const w=256,h=Math.round(256*i.naturalHeight/i.naturalWidth)||192;const g=gray(i,w,h);let m=0;for(const v of g)m+=v;m/=g.length;let s=0,s2=0,n=0;for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){const l=4*g[y*w+x]-g[y*w+x-1]-g[y*w+x+1]-g[(y-1)*w+x]-g[(y+1)*w+x];s+=l;s2+=l*l;n++}const v=s2/n-(s/n)*(s/n);return{bright:m,sharp:v}}
+async function metaFlags(file){const t=new TextDecoder("latin1").decode(await file.slice(0,131072).arrayBuffer());const f={exif:/Exif\0\0/.test(t),editor:(t.match(/Photoshop|Adobe|GIMP|Snapseed|Lightroom|Canva|PicsArt|FaceApp/i)||[])[0]||null};return f}
+function small(i,max){return new Promise(res=>{const r=Math.min(1,max/Math.max(i.naturalWidth,i.naturalHeight));const c=document.createElement("canvas");c.width=Math.round(i.naturalWidth*r);c.height=Math.round(i.naturalHeight*r);c.getContext("2d").drawImage(i,0,0,c.width,c.height);c.toBlob(b=>res(b),"image/jpeg",.82)})}
+
+/* ---------- IA ---------- */
+const PROMPT=(plate)=>`Você é o motor de visão computacional da AutentiCar, plataforma de vistoria veicular digital. Analise a foto enviada pelo cliente. Placa informada pelo cliente: ${plate||"não informada"}.
+Responda SOMENTE com um JSON, sem texto extra e sem crases, neste formato:
+{"e_veiculo":true|false,
+"vista":"frente"|"traseira"|"lateral_esquerda"|"lateral_direita"|"chassi"|"painel"|"outra",
+"placa_lida":"texto lido ou null",
+"chassi_lido":"texto lido ou null",
+"marca_modelo_cor":"o que aparenta ou null",
+"avarias":[{"tipo":"amassado|arranhão|vidro trincado|outro","local":"onde","gravidade":"leve|moderada|grave"}],
+"sinais_fraude":["foto de tela/recaptura","imagem editada","placa adulterada ou coberta","veículo aparenta diferente do informado","foto de outro veículo","outro"],
+"qualidade":"boa|ruim",
+"motivo_qualidade":"curto ou null",
+"observacao":"1 frase objetiva"}
+Seja conservador: só liste sinais de fraude quando houver indício visual real. Você aponta o dano; quem avalia a relevância é o analista humano.`;
+function parse(t){const m=t.match(/\{[\s\S]*\}/);if(!m)throw new Error("json");return JSON.parse(m[0])}
+const norm=s=>(s||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+
+async function analyze(file){
+  const {i,u}=await loadImg(file);
+  const alerts=[],warns=[];
+  const [hash,mf]=await Promise.all([sha256(file),metaFlags(file)]);
+  const q=quality(i),dh=dhash(i);
+  if(S.hashes.includes(hash))alerts.push("Arquivo idêntico a outra foto desta vistoria");
+  else{const j=S.dh.findIndex(d=>ham(d,dh)<=5);if(j>=0)alerts.push("Foto muito parecida com outra já enviada (hash perceptual)")}
+  if(mf.editor)alerts.push("Metadados indicam edição em "+mf.editor);
+  if(!mf.exif)warns.push("Sem metadados EXIF (pode ser captura de tela ou imagem reenviada)");
+  const age=(Date.now()-file.lastModified)/36e5;
+  if(file.lastModified&&age>24)warns.push("Arquivo criado há mais de 24 h; a vistoria exige foto tirada na hora");
+  if(q.sharp<35)warns.push("Imagem com pouca nitidez");
+  if(q.bright<45)warns.push("Imagem muito escura");
+  if(q.bright>220)warns.push("Imagem estourada de luz");
+  let ai=null;
+  if(sample&&imgOK){
+    try{const blob=await small(i,1280);const r=await sample(PROMPT(S.plate),{images:[blob],cache:false,modelTier:"complex"});ai=parse(r.text)}
+    catch(e){warns.push("Análise por IA indisponível nesta foto ("+((e&&e.code)||"erro")+")")}
+  }else warns.push("IA de visão indisponível: foram feitas apenas as verificações locais");
+  S.hashes.push(hash);S.dh.push(dh);
+  let vista="outra";
+  if(ai){
+    vista=VIEWS[ai.vista]?ai.vista:"outra";
+    if(ai.e_veiculo===false)alerts.push("A imagem não parece mostrar um veículo");
+    (ai.sinais_fraude||[]).forEach(s=>alerts.push("IA: "+s));
+    if(ai.qualidade==="ruim")warns.push("Qualidade ruim"+(ai.motivo_qualidade?": "+ai.motivo_qualidade:""));
+    if(S.plate&&ai.placa_lida){if(norm(ai.placa_lida)!==norm(S.plate))alerts.push("Placa lida ("+ai.placa_lida+") difere da informada ("+S.plate+")")}
+    else if(S.plate&&(vista==="frente"||vista==="traseira"))warns.push("Placa não pôde ser lida nesta foto");
+  }
+  return{url:u,hash,vista,ai,alerts,warns,q};
+}
+
+async function onFiles(files){
+  if(S.busy)return;S.busy=true;
+  for(const f of files){
+    const note=say("Analisando "+f.name+"…","bot");
+    try{
+      const r=await analyze(f);note.remove();
+      const prev=S.results[r.vista];
+      if(r.vista!=="outra")S.results[r.vista]=r;
+      const tags=[];
+      if(r.ai)tags.push(["ok","Vista: "+(VIEWS[r.vista]||"não identificada")]);
+      r.alerts.forEach(a=>tags.push(["bad",a]));r.warns.forEach(w=>tags.push(["warn",w]));
+      if(!r.alerts.length&&!r.warns.length)tags.push(["ok","Sem alertas"]);
+      let t="";
+      if(r.ai){
+        if(r.ai.observacao)t+=r.ai.observacao+"\n";
+        if(r.ai.placa_lida)t+="Placa lida: "+r.ai.placa_lida+"\n";
+        if(r.ai.chassi_lido)t+="Chassi lido: "+r.ai.chassi_lido+"\n";
+        if(r.ai.marca_modelo_cor)t+="Aparenta ser: "+r.ai.marca_modelo_cor+"\n";
+        if(r.ai.avarias&&r.ai.avarias.length)t+="Possíveis avarias: "+r.ai.avarias.map(a=>a.tipo+" ("+a.local+", "+a.gravidade+")").join("; ")+"\n";
+      }
+      t+="SHA-256: "+r.hash.slice(0,16)+"…";
+      if(prev)t+="\nSubstitui a foto anterior de "+VIEWS[r.vista]+".";
+      say(t,"bot",{img:r.url,tags});
+    }catch(e){note.remove();say("Não consegui abrir "+f.name+". Envie a imagem em JPG ou PNG.","bot")}
+    prog();
+  }
+  S.busy=false;
+  const miss=REQUIRED.filter(k=>!S.results[k]);
+  if(miss.length)say("Ainda faltam: "+miss.map(k=>VIEWS[k]).join(", ")+".","bot");
+  else say("Todas as fotos obrigatórias foram recebidas. Posso gerar o laudo.","bot");
+  menu();
+}
+
+function laudo(){
+  const miss=REQUIRED.filter(k=>!S.results[k]);
+  const all=Object.entries(S.results);
+  const al=[];all.forEach(([k,r])=>r.alerts.forEach(a=>al.push(VIEWS[k]+": "+a)));
+  const wr=[];all.forEach(([k,r])=>r.warns.forEach(a=>wr.push(VIEWS[k]+": "+a)));
+  const dm=[];all.forEach(([k,r])=>(r.ai&&r.ai.avarias||[]).forEach(a=>dm.push(VIEWS[k]+": "+a.tipo+" ("+a.local+")")));
+  let st,cls,head;
+  if(!S.plate){st="PENDENTE";cls="warn";head="Informe a placa do veículo para concluir."}
+  else if(miss.length){st="PENDENTE";cls="warn";head="Faltam fotos: "+miss.map(k=>VIEWS[k]).join(", ")+"."}
+  else if(al.length){st="ANÁLISE HUMANA";cls="bad";head="Foram encontrados alertas. O caso seria encaminhado à equipe de Operações pelo painel web."}
+  else{st="APROVADA AUTOMATICAMENTE";cls="";head="Nenhum alerta de fraude encontrado."}
+  let t="LAUDO DA VISTORIA\nPlaca: "+(S.plate||"não informada")+"\nResultado: "+st+"\n"+head;
+  if(al.length)t+="\n\nAlertas:\n• "+al.join("\n• ");
+  if(dm.length)t+="\n\nPossíveis avarias (a relevância é avaliada pelo analista):\n• "+dm.join("\n• ");
+  if(wr.length)t+="\n\nObservações:\n• "+wr.join("\n• ");
+  t+="\n\nPor transparência (LGPD, art. 20), você pode contestar qualquer alerta e pedir revisão humana.";
+  say(t,"bot",{cls:"laudo "+cls});menu();
+}
+
+/* ---------- texto livre ---------- */
+async function onText(v){
+  say(v,"me");
+  const m=v.toUpperCase().replace(/[-\s]/g,"").match(/[A-Z]{3}[0-9][A-Z0-9][0-9]{2}/);
+  if(m&&v.length<20){S.plate=m[0];prog();say("Placa "+S.plate+" registrada. Agora envie as fotos do veículo (📷). Se quiser ver a lista, toque em “Fotos de modelo” para ver como enquadrar cada uma.","bot");menu();return}
+  if(/laudo|resultado/i.test(v)){laudo();return}
+  if(!sample){say("Posso receber a placa e analisar fotos. Para conversar livremente, configure o servidor com a chave da API.","bot");return}
+  const ctx="Você é o assistente da AutentiCar (vistoria veicular digital com IA). Responda em português, em até 4 frases, sobre o processo de vistoria, fotos necessárias, antifraude, LGPD e laudo. Não invente dados. Estado atual: placa="+(S.plate||"não informada")+"; fotos recebidas="+(Object.keys(S.results).map(k=>VIEWS[k]).join(", ")||"nenhuma")+".\n\n";
+  S.log.push({role:"user",content:(S.log.length?"":ctx)+v});
+  const w=say("…","bot");
+  try{const r=await sample(S.log.slice(-8),{cache:false,modelTier:"quick"});w.textContent=r.text;S.log.push({role:"assistant",content:r.text})}
+  catch(e){w.textContent="Não consegui responder agora. Tente novamente em instantes.";S.log.pop()}
+}
+
+document.getElementById("cam").onclick=()=>document.getElementById("file").click();
+document.getElementById("file").onchange=e=>{const f=[...e.target.files];e.target.value="";if(f.length)onFiles(f)};
+document.getElementById("send").onclick=()=>{const v=txt.value.trim();if(v){txt.value="";onText(v)}};
+txt.addEventListener("keydown",e=>{if(e.key==="Enter")document.getElementById("send").click()});
+start();
+/* Conecta ao backend (server.js), que guarda a chave da API */
+sample=async(input,opts={})=>{
+  const images=[];
+  for(const b of (opts.images||[]))images.push(await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(",")[1]);f.readAsDataURL(b)}));
+  const res=await fetch("/api/sample",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({input,images,tier:opts.modelTier||"default"})});
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw{code:e.code||res.status,message:e.error||"erro"}}
+  return res.json();
+};
+imgOK=true;
+</script>
+</body>
+</html>
