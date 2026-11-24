@@ -41,13 +41,15 @@ header b{font-size:17px}header small{color:var(--mut);display:block;font-size:12
 <div id="bar">
   <button class="cam" id="cam" title="Enviar foto">📷</button>
   <input type="file" id="file" accept="image/*" capture="environment" multiple hidden>
+  <button class="cam" id="gal" title="Escolher da galeria (teste)">🖼️</button>
+  <input type="file" id="file2" accept="image/*" multiple hidden>
   <input type="text" id="txt" placeholder="Digite a placa ou uma pergunta…" autocomplete="off">
   <button id="send">Enviar</button>
 </div>
 <script>
 const VIEWS={frente:"Frente",traseira:"Traseira",lateral_esquerda:"Lateral esq.",lateral_direita:"Lateral dir.",chassi:"Chassi",painel:"Painel/KM"};
 const REQUIRED=["frente","traseira","lateral_esquerda","lateral_direita","chassi"];
-const S={plate:null,results:{},hashes:[],dh:[],log:[],busy:false};
+const S={plate:null,results:{},extra:[],hashes:[],dh:[],log:[],busy:false};
 const chat=document.getElementById("chat"),txt=document.getElementById("txt");
 let sample=null,imgOK=false;
 
@@ -55,7 +57,7 @@ function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=nu
 function say(text,who,extra){const m=el("div","m"+(who==="me"?" me":""));if(extra&&extra.img){const i=el("img");i.src=extra.img;m.appendChild(i)}if(text)m.appendChild(document.createTextNode(text));if(extra&&extra.tags){const d=el("div");extra.tags.forEach(([k,t])=>d.appendChild(el("span","tag "+k,t)));m.appendChild(d)}if(extra&&extra.cls)m.classList.add(...extra.cls.split(" "));chat.appendChild(m);chat.scrollTop=chat.scrollHeight;return m}
 function chips(list){const c=document.getElementById("chips");c.innerHTML="";list.forEach(([l,f])=>{const b=el("button",null,l);b.onclick=f;c.appendChild(b)})}
 function prog(){const p=document.getElementById("prog");p.innerHTML="";const pl=el("span","pill"+(S.plate?" ok":""),S.plate?"Placa "+S.plate:"Placa pendente");p.appendChild(pl);Object.keys(VIEWS).forEach(k=>{const r=S.results[k];p.appendChild(el("span","pill"+(r?(r.alerts.length?" bad":" ok"):""),VIEWS[k]))})}
-function menu(){chips([["📷 Enviar fotos",()=>document.getElementById("file").click()],["📸 Fotos de modelo",needs],["🧾 Gerar laudo",laudo],["♻️ Nova vistoria",reset]])}
+function menu(){chips([["📷 Enviar fotos",()=>document.getElementById("file").click()],["🖼️ Galeria (teste)",()=>document.getElementById("file2").click()],["📸 Fotos de modelo",needs],["🧾 Gerar laudo",laudo],["♻️ Nova vistoria",reset]])}
 
 function needs(){const m=say("Para a vistoria preciso de fotos tiradas na hora, bem iluminadas e sem reflexo:\n• Frente do veículo (com a placa visível)\n• Traseira (com a placa visível)\n• Lateral esquerda\n• Lateral direita\n• Chassi, em foto de perto\n• Painel com o KM (opcional)\n\nPode enviar na ordem que preferir; eu identifico cada ângulo. Abaixo estão os modelos de enquadramento (a linha tracejada é a moldura da foto).");guideGrid(m);}
 const SIDE='<path d="M18 68L22 56Q26 50 38 48L52 36Q56 33 62 33H100Q106 33 110 37L122 48Q138 50 142 58L144 68Z"/><path d="M57 39L61 47H103L97 39Z"/><circle cx="44" cy="70" r="10"/><circle cx="118" cy="70" r="10"/>';
@@ -70,7 +72,7 @@ const GUIDE={
  painel:["Painel / KM (opcional)","Painel ligado, mostrando o hodômetro, sem reflexo no vidro.",'<circle cx="80" cy="50" r="30"/><path d="M56 62A26 26 0 0 1 104 62"/><rect x="62" y="60" width="36" height="12" rx="2"/><text x="80" y="69" font-size="7" text-anchor="middle" fill="currentColor" stroke="none">KM 45210</text>']
 };
 function guideGrid(m){const g=el("div","g");Object.values(GUIDE).forEach(([t,tip,svg])=>{const d=el("div");d.innerHTML='<svg viewBox="0 0 160 100" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="12" width="148" height="76" rx="6" stroke="var(--pri)" stroke-width="1.5" stroke-dasharray="5 4"/>'+svg+'</svg>';d.appendChild(el("b",null,t));d.appendChild(document.createTextNode(tip));g.appendChild(d)});m.appendChild(g);chat.scrollTop=chat.scrollHeight}
-function reset(){S.plate=null;S.results={};S.hashes=[];S.dh=[];chat.innerHTML="";start()}
+function reset(){clearInterval(window._poll);S.plate=null;S.results={};S.extra=[];S.hashes=[];S.dh=[];chat.innerHTML="";start()}
 function start(){prog();say("Olá! Sou o assistente de vistoria da AutentiCar. Eu analiso as fotos do seu veículo com IA: confiro placa e chassi, procuro avarias e verifico sinais de fraude. Os casos com alerta são revisados por um analista humano.\n\nPara começar, digite a placa do veículo.");menu()}
 
 /* ---------- análises locais ---------- */
@@ -129,7 +131,8 @@ async function analyze(file){
     if(S.plate&&ai.placa_lida){if(norm(ai.placa_lida)!==norm(S.plate))alerts.push("Placa lida ("+ai.placa_lida+") difere da informada ("+S.plate+")")}
     else if(S.plate&&(vista==="frente"||vista==="traseira"))warns.push("Placa não pôde ser lida nesta foto");
   }
-  return{url:u,hash,vista,ai,alerts,warns,q};
+  const thumb=await new Promise(res=>small(i,800).then(b=>{const f=new FileReader();f.onload=()=>res(f.result);f.readAsDataURL(b)}));
+  return{url:u,hash,vista,ai,alerts,warns,q,noAI:!ai,thumb};
 }
 
 async function onFiles(files){
@@ -139,7 +142,8 @@ async function onFiles(files){
     try{
       const r=await analyze(f);note.remove();
       const prev=S.results[r.vista];
-      if(r.vista!=="outra")S.results[r.vista]=r;
+      if(r.vista!=="outra"){if(prev&&prev.alerts.length)S.extra.push({label:VIEWS[r.vista]+" (foto substituída)",r:prev});S.results[r.vista]=r}
+      else S.extra.push({label:r.noAI?"Foto sem análise da IA":"Foto com ângulo não identificado",r});
       const tags=[];
       if(r.ai)tags.push(["ok","Vista: "+(VIEWS[r.vista]||"não identificada")]);
       r.alerts.forEach(a=>tags.push(["bad",a]));r.warns.forEach(w=>tags.push(["warn",w]));
@@ -167,14 +171,16 @@ async function onFiles(files){
 
 function laudo(){
   const miss=REQUIRED.filter(k=>!S.results[k]);
-  const all=Object.entries(S.results);
-  const al=[];all.forEach(([k,r])=>r.alerts.forEach(a=>al.push(VIEWS[k]+": "+a)));
-  const wr=[];all.forEach(([k,r])=>r.warns.forEach(a=>wr.push(VIEWS[k]+": "+a)));
-  const dm=[];all.forEach(([k,r])=>(r.ai&&r.ai.avarias||[]).forEach(a=>dm.push(VIEWS[k]+": "+a.tipo+" ("+a.local+")")));
+  const all=Object.entries(S.results).concat(S.extra.map(e=>[e.label,e.r]));
+  const noai=S.extra.filter(e=>e.r.noAI).length;
+  const al=[];all.forEach(([k,r])=>r.alerts.forEach(a=>al.push((VIEWS[k]||k)+": "+a)));
+  const wr=[];all.forEach(([k,r])=>r.warns.forEach(a=>wr.push((VIEWS[k]||k)+": "+a)));
+  const dm=[];all.forEach(([k,r])=>(r.ai&&r.ai.avarias||[]).forEach(a=>dm.push((VIEWS[k]||k)+": "+a.tipo+" ("+a.local+")")));
   let st,cls,head;
   if(!S.plate){st="PENDENTE";cls="warn";head="Informe a placa do veículo para concluir."}
+  else if(noai){st="PENDENTE";cls="warn";head=noai+" foto(s) ficaram sem análise da IA (serviço indisponível ou erro). Reenvie as fotos para concluir."}
   else if(miss.length){st="PENDENTE";cls="warn";head="Faltam fotos: "+miss.map(k=>VIEWS[k]).join(", ")+"."}
-  else if(al.length){st="ANÁLISE HUMANA";cls="bad";head="Foram encontrados alertas. O caso seria encaminhado à equipe de Operações pelo painel web."}
+  else if(al.length){st="ANÁLISE HUMANA";cls="bad";head="Foram encontrados alertas. O caso será encaminhado ao analista da equipe de Operações."}
   else{st="APROVADA AUTOMATICAMENTE";cls="";head="Nenhum alerta de fraude encontrado."}
   let t="LAUDO DA VISTORIA\nPlaca: "+(S.plate||"não informada")+"\nResultado: "+st+"\n"+head;
   if(al.length)t+="\n\nAlertas:\n• "+al.join("\n• ");
@@ -182,6 +188,7 @@ function laudo(){
   if(wr.length)t+="\n\nObservações:\n• "+wr.join("\n• ");
   t+="\n\nPor transparência (LGPD, art. 20), você pode contestar qualquer alerta e pedir revisão humana.";
   say(t,"bot",{cls:"laudo "+cls});menu();
+  if(st==="ANÁLISE HUMANA"&&window.submitCase)window.submitCase();
 }
 
 /* ---------- texto livre ---------- */
@@ -200,6 +207,8 @@ async function onText(v){
 
 document.getElementById("cam").onclick=()=>document.getElementById("file").click();
 document.getElementById("file").onchange=e=>{const f=[...e.target.files];e.target.value="";if(f.length)onFiles(f)};
+document.getElementById("gal").onclick=()=>document.getElementById("file2").click();
+document.getElementById("file2").onchange=e=>{const f=[...e.target.files];e.target.value="";if(f.length)onFiles(f)};
 document.getElementById("send").onclick=()=>{const v=txt.value.trim();if(v){txt.value="";onText(v)}};
 txt.addEventListener("keydown",e=>{if(e.key==="Enter")document.getElementById("send").click()});
 start();
@@ -212,6 +221,18 @@ sample=async(input,opts={})=>{
   return res.json();
 };
 imgOK=true;
+/* Envia o caso com alerta ao painel do analista e acompanha a decisão */
+window.submitCase=async()=>{
+  const items=[...Object.entries(S.results).map(([k,r])=>[VIEWS[k],r]),...S.extra.map(e=>[e.label,e.r])].map(([v,r])=>({view:v,image:r.thumb,alerts:r.alerts,warns:r.warns,obs:(r.ai&&r.ai.observacao)||""}));
+  try{
+    const res=await fetch("/api/cases",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plate:S.plate,items})});
+    if(!res.ok)throw 0;
+    const {id}=await res.json();
+    say("Caso enviado para análise humana. Protocolo: "+id.slice(0,8).toUpperCase()+". Assim que o analista decidir, o resultado aparece aqui.","bot");
+    clearInterval(window._poll);
+    window._poll=setInterval(async()=>{try{const r=await fetch("/api/cases/"+id);if(!r.ok)return;const c=await r.json();if(c.status!=="pendente"){clearInterval(window._poll);say((c.status==="aprovado"?"✅ O analista aprovou a vistoria.":"❌ O analista reprovou a vistoria.")+(c.note?"\nObservação do analista: "+c.note:""),"bot",{cls:"laudo "+(c.status==="aprovado"?"":"bad")})}}catch(e){}},5000);
+  }catch(e){say("Não consegui enviar o caso ao analista agora. Gere o laudo novamente em instantes.","bot")}
+};
 </script>
 </body>
 </html>
